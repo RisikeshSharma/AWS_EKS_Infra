@@ -6,7 +6,14 @@ terraform {
       version = "~> 5.0"
     }
   }
+
+  backend "s3" {
+    bucket = "rishikesh-eks-tfstate-468354413274"
+    key    = "eks/terraform.tfstate"
+    region = "us-east-1"
+  }
 }
+
 
 provider "aws" {
   region = var.aws_region
