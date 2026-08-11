@@ -1,0 +1,75 @@
+name: "EKS Terraform CI/CD Pipeline"
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+    inputs:
+      terraform_action:
+        description: 'Select Terraform Action to run'
+        required: true
+        default: 'apply'
+        type: choice
+        options:
+          - apply
+          - plan
+          - destroy
+
+jobs:
+  terraform:
+    name: "Terraform EKS Deployment"
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false
+        continue-on-error: true
+
+      # Execute Apply on push to main or manual workflow_dispatch with 'apply'
+      - name: Terraform Apply
+        if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'apply'))
+        run: terraform apply -auto-approve -input=false
+
+      # Execute Destroy on manual workflow_dispatch with 'destroy'
+      - name: Terraform Destroy
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.terraform_action == 'destroy'
+        run: terraform destroy -auto-approve -input=false
