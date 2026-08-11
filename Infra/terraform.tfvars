@@ -1,0 +1,5 @@
+aws_region         = "us-east-1"
+cluster_name       = "k8s-lab-cluster"
+cluster_version    = "1.36"
+node_instance_type = "t3.large"
+ami_type           = "AL2023_x86_64_STANDARD"
