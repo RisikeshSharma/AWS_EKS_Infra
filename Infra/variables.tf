@@ -13,7 +13,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes Version"
   type        = string
-  default     = "1.36"
+  default     = "m7i-flex.large"
 }
 
 variable "node_instance_type" {
