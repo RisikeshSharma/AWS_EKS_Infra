@@ -282,7 +282,6 @@ resource "aws_eks_node_group" "main" {
 #
 # Calico is installed automatically after node group creation.
 # ============================================================
-
 resource "null_resource" "calico_install" {
 
   depends_on = [
@@ -292,76 +291,88 @@ resource "null_resource" "calico_install" {
   provisioner "local-exec" {
 
     interpreter = [
-      "PowerShell",
-      "-Command"
+      "bash",
+      "-c"
     ]
 
     command = <<-EOT
+      set -e
 
-      Write-Host "============================================"
-      Write-Host "Updating kubeconfig..."
-      Write-Host "============================================"
+      echo "============================================"
+      echo "Updating kubeconfig..."
+      echo "============================================"
 
-      aws eks update-kubeconfig `
-        --region ${var.aws_region} `
+      aws eks update-kubeconfig \
+        --region ${var.aws_region} \
         --name ${var.cluster_name}
 
-      Write-Host ""
-      Write-Host "============================================"
-      Write-Host "Installing Calico CRDs..."
-      Write-Host "============================================"
+      echo ""
+      echo "============================================"
+      echo "Installing Calico CRDs..."
+      echo "============================================"
 
-      kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/v1_crd_projectcalico_org.yaml
+      kubectl create -f \
+        https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/v1_crd_projectcalico_org.yaml
 
-      Write-Host ""
-      Write-Host "============================================"
-      Write-Host "Installing Tigera Operator..."
-      Write-Host "============================================"
+      echo ""
+      echo "============================================"
+      echo "Installing Tigera Operator..."
+      echo "============================================"
 
-      kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/tigera-operator.yaml
+      kubectl create -f \
+        https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/tigera-operator.yaml
 
-      Write-Host ""
-      Write-Host "Waiting for Tigera Operator..."
-      Write-Host ""
+      echo ""
+      echo "============================================"
+      echo "Waiting for Tigera Operator..."
+      echo "============================================"
 
-      kubectl wait `
-        --for=condition=Available `
-        deployment/tigera-operator `
-        -n tigera-operator `
+      kubectl wait \
+        --for=condition=Available \
+        deployment/tigera-operator \
+        -n tigera-operator \
         --timeout=180s
 
-      Write-Host ""
-      Write-Host "============================================"
-      Write-Host "Configuring Calico..."
-      Write-Host "============================================"
+      echo ""
+      echo "============================================"
+      echo "Configuring Calico..."
+      echo "============================================"
 
-      @"
-apiVersion: operator.tigera.io/v1
-kind: Installation
-metadata:
-  name: default
-spec:
-  kubernetesProvider: EKS
+      cat <<EOF | kubectl apply -f -
+      apiVersion: operator.tigera.io/v1
+      kind: Installation
+      metadata:
+        name: default
+      spec:
+        kubernetesProvider: EKS
 
-  cni:
-    type: AmazonVPC
+        cni:
+          type: AmazonVPC
 
-  calicoNetwork:
-    bgp: Disabled
+        calicoNetwork:
+          bgp: Disabled
 
----
-apiVersion: operator.tigera.io/v1
-kind: APIServer
-metadata:
-  name: default
-spec: {}
-"@ | kubectl apply -f -
+      ---
+      apiVersion: operator.tigera.io/v1
+      kind: APIServer
+      metadata:
+        name: default
+      spec: {}
+      EOF
 
-      Write-Host ""
-      Write-Host "============================================"
-      Write-Host "Calico installation completed."
-      Write-Host "============================================"
+      echo ""
+      echo "============================================"
+      echo "Calico installation completed."
+      echo "============================================"
+
+      echo ""
+      echo "Checking Calico status..."
+      kubectl get pods -A
+      kubectl get tigerastatus
 
     EOT
   }
 }
+
+
+ 
