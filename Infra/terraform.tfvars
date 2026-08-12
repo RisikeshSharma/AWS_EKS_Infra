@@ -1,5 +1,9 @@
-aws_region         = "us-east-1"
-cluster_name       = "k8s-lab-cluster"
-cluster_version    = "1.36"
+aws_region = "us-east-1"
+
+cluster_name = "k8s-lab-cluster"
+
+cluster_version = "1.36"
+
 node_instance_type = "m7i-flex.large"
-ami_type           = "AL2023_x86_64_STANDARD"
+
+ami_type = "AL2023_x86_64_STANDARD"
