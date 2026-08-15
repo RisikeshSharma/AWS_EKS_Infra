@@ -1,0 +1,204 @@
+name: Terraform AKS CI/CD Pipeline
+
+on:
+
+
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+      
+# Required for Azure OIDC Authentication
+
+permissions:
+  id-token: write
+  contents: read
+
+
+env:
+
+  TF_VERSION: "1.8.0"
+
+  WORKING_DIR: "parent_module"
+
+  ARM_USE_OIDC: true
+
+  ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+
+  ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+
+
+jobs:
+
+
+#############################
+# CI PIPELINE
+#############################
+
+
+  terraform-ci:
+
+
+    name: Terraform Validate Scan Plan
+
+
+    runs-on: ubuntu-latest
+
+
+
+    steps:
+
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+
+
+    - name: Azure Login Using OIDC
+      uses: azure/login@v2
+      with:
+
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+
+        terraform_version: ${{ env.TF_VERSION }}
+
+
+
+    - name: Terraform Format Check
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform fmt -check -recursive
+
+
+
+    - name: Terraform Init
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform init
+
+
+
+    - name: Terraform Validate
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform validate
+
+
+
+    - name: Setup TFLint
+      uses: terraform-linters/setup-tflint@v4
+
+
+
+    - name: Terraform Lint
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        tflint --init
+
+        tflint
+
+
+
+    - name: Checkov Security Scan
+      uses: bridgecrewio/checkov-action@master
+      with:
+
+        directory: .
+
+        framework: terraform
+
+        soft_fail: true
+
+
+
+    - name: Terraform Plan
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform plan
+
+
+
+
+#############################
+# CD PIPELINE
+#############################
+
+
+  terraform-apply:
+
+
+    name: Terraform Apply Azure Deployment
+
+
+    needs: terraform-ci
+
+
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+
+    runs-on: ubuntu-latest
+
+
+
+    steps:
+
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+
+
+    - name: Azure Login Using OIDC
+      uses: azure/login@v2
+      with:
+
+        client-id: ${{ secrets.AZURE_CLIENT_ID }}
+
+        tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+
+        terraform_version: ${{ env.TF_VERSION }}
+
+
+
+    - name: Terraform Init
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform init
+
+
+
+    - name: Terraform Apply
+      working-directory: ${{ env.WORKING_DIR }}
+      run: |
+
+        terraform apply -auto-approve
