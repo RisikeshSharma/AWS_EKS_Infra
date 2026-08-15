@@ -14,7 +14,7 @@ terraform {
 
     helm = {
       source  = "hashicorp/helm"
-      version = "~> 2.17"
+      version = "~> 3.0"
     }
   }
 
@@ -34,13 +34,13 @@ provider "aws" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host = aws_eks_cluster.main.endpoint
     cluster_ca_certificate = base64decode(
       aws_eks_cluster.main.certificate_authority[0].data
     )
 
-    exec {
+    exec = {
       api_version = "client.authentication.k8s.io/v1beta1"
 
       command = "aws"
@@ -451,7 +451,7 @@ resource "aws_iam_role_policy_attachment" "ebs_csi" {
 
   role = aws_iam_role.ebs_csi.name
 
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicyV2"
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicyV2"
 }
 
 
@@ -715,33 +715,48 @@ resource "aws_eks_addon" "snapshot_controller" {
 resource "null_resource" "calico_install" {
 
   depends_on = [
-
     aws_eks_node_group.main
-
   ]
 
   provisioner "local-exec" {
 
     interpreter = [
-
       "bash",
       "-c"
-
     ]
 
     command = <<-EOT
-
       set -e
+
+      echo "============================================"
+      echo "Updating kubeconfig"
+      echo "============================================"
 
       aws eks update-kubeconfig \
         --region ${var.aws_region} \
         --name ${var.cluster_name}
 
-      kubectl apply -f \
-        https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/v1_crd_projectcalico_org.yaml
+      echo "============================================"
+      echo "Installing Calico CRDs"
+      echo "============================================"
 
-      kubectl apply -f \
-        https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/tigera-operator.yaml
+      kubectl apply \
+        --server-side \
+        --force-conflicts \
+        -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/v1_crd_projectcalico_org.yaml
+
+      echo "============================================"
+      echo "Installing Tigera Operator"
+      echo "============================================"
+
+      kubectl apply \
+        --server-side \
+        --force-conflicts \
+        -f https://raw.githubusercontent.com/projectcalico/calico/v3.32.1/manifests/tigera-operator.yaml
+
+      echo "============================================"
+      echo "Waiting for Tigera Operator"
+      echo "============================================"
 
       kubectl wait \
         --for=condition=Available \
@@ -749,42 +764,47 @@ resource "null_resource" "calico_install" {
         -n tigera-operator \
         --timeout=180s
 
-      cat <<EOF | kubectl apply -f -
+      echo "============================================"
+      echo "Configuring Calico"
+      echo "============================================"
 
-      apiVersion: operator.tigera.io/v1
-      kind: Installation
+      cat > /tmp/calico-installation.yaml <<EOF
+apiVersion: operator.tigera.io/v1
+kind: Installation
+metadata:
+  name: default
+spec:
+  kubernetesProvider: EKS
+  cni:
+    type: AmazonVPC
+  calicoNetwork:
+    bgp: Disabled
+---
+apiVersion: operator.tigera.io/v1
+kind: APIServer
+metadata:
+  name: default
+spec: {}
+EOF
 
-      metadata:
-        name: default
+      kubectl apply \
+        --server-side \
+        --force-conflicts \
+        -f /tmp/calico-installation.yaml
 
-      spec:
-
-        kubernetesProvider: EKS
-
-        cni:
-          type: AmazonVPC
-
-        calicoNetwork:
-          bgp: Disabled
-
-      ---
-
-      apiVersion: operator.tigera.io/v1
-      kind: APIServer
-
-      metadata:
-        name: default
-
-      spec: {}
-
-      EOF
+      echo "============================================"
+      echo "Waiting for Calico"
+      echo "============================================"
 
       kubectl get tigerastatus
+
+      echo "============================================"
+      echo "Calico installation completed"
+      echo "============================================"
 
     EOT
   }
 }
-
 
 # ============================================================
 # 25. AWS LOAD BALANCER CONTROLLER IAM POLICY
@@ -1049,75 +1069,47 @@ resource "aws_iam_role_policy_attachment" "aws_lb_controller" {
 
 resource "helm_release" "aws_load_balancer_controller" {
 
-  name = "aws-load-balancer-controller"
-
+  name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
-
-  chart = "aws-load-balancer-controller"
-
-  namespace = "kube-system"
+  chart      = "aws-load-balancer-controller"
+  namespace  = "kube-system"
 
   create_namespace = false
 
   version = var.aws_lb_controller_chart_version
 
-  set {
-
-    name = "clusterName"
-
-    value = aws_eks_cluster.main.name
-
-  }
-
-  set {
-
-    name = "region"
-
-    value = var.aws_region
-
-  }
-
-  set {
-
-    name = "vpcId"
-
-    value = aws_vpc.k8s_vpc.id
-
-  }
-
-  set {
-
-    name = "serviceAccount.create"
-
-    value = "true"
-
-  }
-
-  set {
-
-    name = "serviceAccount.name"
-
-    value = "aws-load-balancer-controller"
-
-  }
-
-  set {
-
-    name = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-
-    value = aws_iam_role.aws_lb_controller.arn
-
-  }
+  set = [
+    {
+      name  = "clusterName"
+      value = aws_eks_cluster.main.name
+    },
+    {
+      name  = "region"
+      value = var.aws_region
+    },
+    {
+      name  = "vpcId"
+      value = aws_vpc.k8s_vpc.id
+    },
+    {
+      name  = "serviceAccount.create"
+      value = "true"
+    },
+    {
+      name  = "serviceAccount.name"
+      value = "aws-load-balancer-controller"
+    },
+    {
+      name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+      value = aws_iam_role.aws_lb_controller.arn
+    }
+  ]
 
   depends_on = [
-
     aws_eks_node_group.main,
-
     aws_iam_role_policy_attachment.aws_lb_controller
-
   ]
 }
-
 
 # ============================================================
 # 28. STORAGE CLASSES
@@ -1128,91 +1120,77 @@ resource "helm_release" "aws_load_balancer_controller" {
 resource "null_resource" "storage_classes" {
 
   depends_on = [
-
     aws_eks_addon.ebs_csi,
-
     aws_eks_addon.efs_csi,
-
     aws_efs_mount_target.eks
-
   ]
 
   provisioner "local-exec" {
 
     interpreter = [
-
       "bash",
       "-c"
-
     ]
 
     command = <<-EOT
-
       set -e
+
+      echo "============================================"
+      echo "Updating kubeconfig"
+      echo "============================================"
 
       aws eks update-kubeconfig \
         --region ${var.aws_region} \
         --name ${var.cluster_name}
 
-      cat <<EOF | kubectl apply -f -
+      echo "============================================"
+      echo "Creating EBS StorageClass"
+      echo "============================================"
 
-      apiVersion: storage.k8s.io/v1
-      kind: StorageClass
+      cat > /tmp/gp3-storageclass.yaml <<EOF
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+parameters:
+  type: ${var.ebs_volume_type}
+  encrypted: "true"
+reclaimPolicy: Delete
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+EOF
 
-      metadata:
+      kubectl apply -f /tmp/gp3-storageclass.yaml
 
-        name: gp3
+      echo "============================================"
+      echo "Creating EFS StorageClass"
+      echo "============================================"
 
-        annotations:
+      cat > /tmp/efs-storageclass.yaml <<EOF
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: efs-sc
+provisioner: efs.csi.aws.com
+parameters:
+  provisioningMode: efs-ap
+  fileSystemId: ${aws_efs_file_system.eks.id}
+  directoryPerms: "700"
+  gidRangeStart: "1000"
+  gidRangeEnd: "2000"
+  basePath: "/dynamic_provisioning"
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+EOF
 
-          storageclass.kubernetes.io/is-default-class: "true"
+      kubectl apply -f /tmp/efs-storageclass.yaml
 
-      provisioner: ebs.csi.aws.com
-
-      parameters:
-
-        type: ${var.ebs_volume_type}
-
-        encrypted: "true"
-
-      reclaimPolicy: Delete
-
-      volumeBindingMode: WaitForFirstConsumer
-
-      allowVolumeExpansion: true
-
-      ---
-
-      apiVersion: storage.k8s.io/v1
-      kind: StorageClass
-
-      metadata:
-
-        name: efs-sc
-
-      provisioner: efs.csi.aws.com
-
-      parameters:
-
-        provisioningMode: efs-ap
-
-        fileSystemId: ${aws_efs_file_system.eks.id}
-
-        directoryPerms: "700"
-
-        gidRangeStart: "1000"
-
-        gidRangeEnd: "2000"
-
-        basePath: "/dynamic_provisioning"
-
-      reclaimPolicy: Delete
-
-      volumeBindingMode: Immediate
-
-      EOF
-
-      echo "StorageClasses created."
+      echo "============================================"
+      echo "StorageClasses created"
+      echo "============================================"
 
       kubectl get storageclass
 
