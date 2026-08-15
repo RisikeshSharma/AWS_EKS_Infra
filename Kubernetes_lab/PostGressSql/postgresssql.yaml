@@ -41,18 +41,3 @@ spec:
               cpu: "500m"
               memory: "512Mi"
 
-# ---
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: postgres
-#   namespace: my-namespace
-# spec:
-#   selector:
-#     app: postgres
-#   ports:
-#     - port: 5432
-#       targetPort: 5432
-#   type: ClusterIP
-
-

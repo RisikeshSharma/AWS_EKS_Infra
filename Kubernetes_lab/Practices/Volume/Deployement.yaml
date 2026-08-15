@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: azure-disk-deployment
+
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app: azure-disk-app
+
+  template:
+    metadata:
+      labels:
+        app: azure-disk-app
+
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:latest
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "2"
+              memory: "512Mi"
+
+          volumeMounts:
+            - name: azure-storage
+              mountPath: /data
+
+      volumes:
+        - name: azure-storage
+          persistentVolumeClaim:
+            claimName: azure-disk-pvc
